@@ -7,6 +7,15 @@ user specified IDE to that file and line number.
 
 To use, call install().
 
+To execute on maya startup, add the following to your userSetup.py.
+You need to assign the return of install() to variables.
+
+EXAMPLE:
+    from maya import cmds
+    import scriptEditorLinkFilter
+    cmd_string = "script_editor_wid, script_editor_link_event_filter = scriptEditorLinkFilter.install()"
+    cmds.evalDeferred(cmd_string, lowestPriority=True)
+
 """
 import os
 import re
