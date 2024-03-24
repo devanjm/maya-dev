@@ -7,6 +7,8 @@ user specified IDE to that file and line number.
 
 To use, call install().
 
+Make sure you replace IDE_EXE and IDE_CMD with the exe and command for your own IDE.
+
 To execute on maya startup, add the following to your userSetup.py.
 You need to assign the return of install() to variables.
 
@@ -35,8 +37,11 @@ LINK_HOVER_COLOR = (120, 165, 255, 255)
 # Regex to parse error lines
 RE_PATTERN = r'(?P<file_name>(?<=File \").*)(?P<line_number>\", line \d*)'
 
-# IDE executable path
+# IDE executable path - replace with your own
 IDE_EXE = r"C:\Program Files\JetBrains\PyCharm Community Edition 2023.1.2\bin\pycharm64.exe"
+
+# IDE command to execute - replace this with the formatting it specifies
+IDE_CMD = f'{IDE_EXE} --line {{line_num}} {{file_path}}'
 
 
 def getScriptEditorOutputWidget():
@@ -243,7 +248,7 @@ class ScriptLinkFilter(QtCore.QObject):
                 line_num = match['line_number'].split()[-1]
 
                 # Launch the editor
-                cmd_string = f'{IDE_EXE} --line {line_num} {file_path}'
+                cmd_string = IDE_CMD.format(line_num=line_num, file_path=file_path)
                 subprocess.Popen(cmd_string)
 
                 # Restore the document to default
