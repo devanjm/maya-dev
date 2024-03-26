@@ -79,6 +79,7 @@ class ScriptLinkFilter(QtCore.QObject):
         self.key_held = False
         self.mouse_over_link = False
         self.stored_cursor_pos = 0
+        self.stored_scroll_pos = [0, 0]
         self.highlighted_block = 0
         self.link_blocks = []
 
@@ -196,6 +197,22 @@ class ScriptLinkFilter(QtCore.QObject):
         self.link_blocks = []
         self.mouse_over_link = False
 
+    def storeScrollBarPositions(self):
+        """
+        Store positions of scroll bars.
+
+        """
+        self.stored_scroll_pos = [self.obj.horizontalScrollBar().value(),
+                                  self.obj.verticalScrollBar().value()]
+
+    def restoreScrollBarPositions(self):
+        """
+        Restore scroll bars to saved positions.
+
+        """
+        self.obj.horizontalScrollBar().setValue(self.stored_scroll_pos[0])
+        self.obj.verticalScrollBar().setValue(self.stored_scroll_pos[1])
+
     def eventFilter(self, obj, event):
 
         self.obj = obj
@@ -203,6 +220,7 @@ class ScriptLinkFilter(QtCore.QObject):
         # Toggle key press
         # Scans document for clickable links and highlights them
         if event.type() == QtCore.QEvent.Type.KeyPress and event.key() == TOGGLE_KEY:
+            self.storeScrollBarPositions()
             self.searchDocumentForLinks()
             cursor = obj.textCursor()
 
@@ -211,12 +229,14 @@ class ScriptLinkFilter(QtCore.QObject):
                 cursor.setPosition(block.position())
                 self.setLineFormat(cursor, line_format=self.link_format)
 
+            self.restoreScrollBarPositions()
             self.key_held = True
 
         # Toggle key release
         # Restores the formatting to default
         if event.type() == QtCore.QEvent.Type.KeyRelease and event.key() == TOGGLE_KEY:
             self.restoreDocumentToDefault()
+            self.restoreScrollBarPositions()
             self.key_held = False
 
         # Mouse move
