@@ -261,22 +261,23 @@ class ScriptLinkFilter(QtCore.QObject):
         # Mouse click
         # Launches editor to error file and line
         if event.type() in [QtCore.QEvent.Type.MouseButtonPress, QtCore.QEvent.Type.TabletPress]:
-            if self.mouse_over_link:
-                cursor, text = self.getTextUnderCursor()
+            if event.button() == QtCore.Qt.MouseButton.LeftButton:
+                if self.mouse_over_link:
+                    cursor, text = self.getTextUnderCursor()
 
-                # Parse line
-                match = self.matchTextForFileAndLine(text)
-                file_path = match['file_name']
-                line_num = match['line_number'].split()[-1]
+                    # Parse line
+                    match = self.matchTextForFileAndLine(text)
+                    file_path = match['file_name']
+                    line_num = match['line_number'].split()[-1]
 
-                # Launch the editor
-                cmd_string = IDE_CMD.format(line_num=line_num, file_path=file_path)
-                subprocess.Popen(cmd_string)
+                    # Launch the editor
+                    cmd_string = IDE_CMD.format(line_num=line_num, file_path=file_path)
+                    subprocess.Popen(cmd_string)
 
-                # Restore the document to default
-                self.restoreDocumentToDefault()
+                    # Restore the document to default
+                    self.restoreDocumentToDefault()
 
-                return True
+                    return True
 
         return super().eventFilter(obj, event)
 
