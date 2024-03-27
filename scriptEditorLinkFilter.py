@@ -129,9 +129,11 @@ class ScriptLinkFilter(QtCore.QObject):
         """
 
         line_format = line_format or self.default_format
+        pos = cursor.position()
         cursor.select(QtGui.QTextCursor.SelectionType.LineUnderCursor)
         cursor.setCharFormat(line_format)
         cursor.clearSelection()
+        cursor.setPosition(pos)
         self.obj.setTextCursor(cursor)
 
     def restoreDefaults(self, cursor, line_format=None):
