@@ -43,6 +43,9 @@ IDE_EXE = r"C:\Program Files\JetBrains\PyCharm Community Edition 2023.1.2\bin\py
 # IDE command to execute - replace this with the formatting it specifies
 IDE_CMD = f'{IDE_EXE} --line {{line_num}} {{file_path}}'
 
+global text_edit
+global event_filter
+
 
 def getScriptEditorOutputWidget():
     ptr = omui.MQtUtil.mainWindow()
@@ -52,16 +55,26 @@ def getScriptEditorOutputWidget():
 
 
 def install():
+    global event_filter
     script_editor_wid = getScriptEditorOutputWidget()
-    event_filter = ScriptLinkFilter()
-    script_editor_wid.installEventFilter(event_filter)
+    event_filter = ScriptLinkFilter(parent=script_editor_wid)
     return script_editor_wid, event_filter
+
+
+def remove():
+    global event_filter
+    event_filter.parent.document().contentsChange.disconnect(event_filter.highlightNewBlocks)
+    event_filter.parent.removeEventFilter(event_filter)
+    event_filter = None
 
 
 class ScriptLinkFilter(QtCore.QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
+
+        self.parent = parent
+        self.doc = self.parent.document()
 
         # Link formatting
         self.link_format = QtGui.QTextCharFormat()
@@ -73,15 +86,19 @@ class ScriptLinkFilter(QtCore.QObject):
         self.link_hover_format.setForeground(QtGui.QColor.fromRgb(*LINK_HOVER_COLOR))
         self.link_hover_format.setFontUnderline(True)
 
+        # Default formatting
         self.default_format = QtGui.QTextCharFormat()
 
-        self.obj = None
-        self.key_held = False
+        self.cursor = None
         self.mouse_over_link = False
         self.stored_cursor_pos = 0
         self.stored_scroll_pos = [0, 0]
         self.highlighted_block = 0
         self.link_blocks = []
+
+        # Connect signal and event filter
+        self.doc.contentsChange.connect(self.highlightNewBlocks)
+        self.parent.installEventFilter(self)
 
     @staticmethod
     def matchTextForFileAndLine(text):
@@ -97,6 +114,55 @@ class ScriptLinkFilter(QtCore.QObject):
         match = re.search(RE_PATTERN, text)
         return match
 
+    @staticmethod
+    def pauseEvents(time):
+        """
+        Function to pause event processing.
+
+        """
+        # Create a QEventLoop
+        loop = QtCore.QEventLoop()
+
+        # Create a QTimer to resume event processing after time
+        QtCore.QTimer.singleShot(time, loop.quit)
+
+        # Process pending events until the timer expires
+        loop.exec_()
+
+    def highlightNewBlocks(self, position, charsRemoved, charsAdded):
+        """
+        Reads new text as it is added to the document and highlights
+        error line blocks.
+
+        """
+        if charsAdded:
+            self.doc.blockSignals(True)
+
+            # Get the cursor and text under it
+            cursor = self.parent.textCursor()
+            cursor.setPosition(position)
+            block = self.doc.findBlock(position)
+            text = block.text()
+
+            # Check for error lines
+            match = self.matchTextForFileAndLine(text)
+
+            if match:
+                file_path = match['file_name']
+                if os.path.exists(file_path):
+                    self.setLineFormat(cursor, line_format=self.link_format)
+                    self.link_blocks.append(block)
+
+            self.doc.blockSignals(False)
+
+        # If the doc is empty, reset vars.
+        if self.doc.isEmpty():
+            self.mouse_over_link = False
+            self.stored_cursor_pos = 0
+            self.stored_scroll_pos = [0, 0]
+            self.highlighted_block = 0
+            self.link_blocks = []
+
     def setCursorOverLink(self, cursor, line_format=None):
         """
         Store text block, set block format, and set
@@ -104,7 +170,7 @@ class ScriptLinkFilter(QtCore.QObject):
 
         Args:
             cursor (QTextCursor):
-            line_format:
+            line_format (QTextCharFormat):
 
         Returns:
 
@@ -121,20 +187,23 @@ class ScriptLinkFilter(QtCore.QObject):
         Set the line format for the block under the cursor.
 
         Args:
-            cursor:
-            line_format:
+            cursor (QTextCursor):
+            line_format (QTextCharFormat):
 
         Returns:
 
         """
-
+        self.doc.blockSignals(True)
         line_format = line_format or self.default_format
+
         pos = cursor.position()
         cursor.select(QtGui.QTextCursor.SelectionType.LineUnderCursor)
         cursor.setCharFormat(line_format)
         cursor.clearSelection()
         cursor.setPosition(pos)
-        self.obj.setTextCursor(cursor)
+
+        self.parent.setTextCursor(cursor)
+        self.doc.blockSignals(False)
 
     def restoreDefaults(self, cursor, line_format=None):
         """
@@ -142,8 +211,8 @@ class ScriptLinkFilter(QtCore.QObject):
         under the cursor.
 
         Args:
-            cursor:
-            line_format:
+            cursor (QTextCursor):
+            line_format (QTextCharFormat):
 
         Returns:
 
@@ -161,102 +230,43 @@ class ScriptLinkFilter(QtCore.QObject):
         Returns:
 
         """
-        cursor = self.obj.cursorForPosition(self.obj.mapFromGlobal(QtGui.QCursor().pos()))
+        cursor = self.parent.cursorForPosition(self.parent.mapFromGlobal(QtGui.QCursor().pos()))
         text = cursor.block().text()
         return cursor, text
-
-    def searchDocumentForLinks(self):
-        """
-        Scan the document text and find clickable links.
-
-        Returns:
-
-        """
-        doc = self.obj.document()
-        block = doc.firstBlock()
-        num_blocks = doc.blockCount()
-        i = 0
-        while i < num_blocks:
-            match = self.matchTextForFileAndLine(block.text())
-            if match:
-                if os.path.exists(match['file_name']):
-                    self.link_blocks.append(block)
-            block = block.next()
-            i += 1
-
-    def restoreDocumentToDefault(self):
-        """
-        Restore the document to default state.
-
-        Returns:
-
-        """
-        cursor = self.obj.textCursor()
-        for block in self.link_blocks:
-            cursor.setPosition(block.position())
-            self.setLineFormat(cursor)
-        QtGui.QGuiApplication.restoreOverrideCursor()
-        self.link_blocks = []
-        self.mouse_over_link = False
 
     def storeScrollBarPositions(self):
         """
         Store positions of scroll bars.
 
         """
-        self.stored_scroll_pos = [self.obj.horizontalScrollBar().value(),
-                                  self.obj.verticalScrollBar().value()]
+        self.stored_scroll_pos = [self.parent.horizontalScrollBar().value(),
+                                  self.parent.verticalScrollBar().value()]
 
     def restoreScrollBarPositions(self):
         """
         Restore scroll bars to saved positions.
 
         """
-        self.obj.horizontalScrollBar().setValue(self.stored_scroll_pos[0])
-        self.obj.verticalScrollBar().setValue(self.stored_scroll_pos[1])
+        self.parent.horizontalScrollBar().setValue(self.stored_scroll_pos[0])
+        self.parent.verticalScrollBar().setValue(self.stored_scroll_pos[1])
 
     def eventFilter(self, obj, event):
-
-        self.obj = obj
-
-        # Toggle key press
-        # Scans document for clickable links and highlights them
-        if event.type() == QtCore.QEvent.Type.KeyPress and event.key() == TOGGLE_KEY:
-            self.storeScrollBarPositions()
-            self.searchDocumentForLinks()
-            cursor = obj.textCursor()
-
-            # Move the cursor to each block and highlight them
-            for block in self.link_blocks:
-                cursor.setPosition(block.position())
-                self.setLineFormat(cursor, line_format=self.link_format)
-
-            self.restoreScrollBarPositions()
-            self.key_held = True
-
-        # Toggle key release
-        # Restores the formatting to default
-        if event.type() == QtCore.QEvent.Type.KeyRelease and event.key() == TOGGLE_KEY:
-            self.restoreDocumentToDefault()
-            self.restoreScrollBarPositions()
-            self.key_held = False
 
         # Mouse move
         # Highlights hovered links
         if event.type() in [QtCore.QEvent.Type.MouseMove, QtCore.QEvent.Type.TabletMove]:
-            if self.key_held:
-                cursor = self.obj.cursorForPosition(self.obj.mapFromGlobal(QtGui.QCursor().pos()))
+            cursor = self.parent.cursorForPosition(self.parent.mapFromGlobal(QtGui.QCursor().pos()))
 
-                # If the mouse is over a link, highlight it
-                if cursor.block() in self.link_blocks:
-                    if not self.mouse_over_link:
-                        self.setCursorOverLink(cursor, line_format=self.link_hover_format)
+            # If the mouse is over a link, highlight it
+            if cursor.block() in self.link_blocks:
+                if not self.mouse_over_link:
+                    self.setCursorOverLink(cursor, line_format=self.link_hover_format)
 
-                # This is the case for if we already are highlighted and
-                # move off a link, return it to default link formatting.
-                if self.mouse_over_link:
-                    if cursor.block() != self.highlighted_block:
-                        self.restoreDefaults(cursor, line_format=self.link_format)
+            # This is the case for if we already are highlighted and
+            # move off a link, return it to default link formatting.
+            if self.mouse_over_link:
+                if cursor.block() != self.highlighted_block:
+                    self.restoreDefaults(cursor, line_format=self.link_format)
 
         # Mouse click
         # Launches editor to error file and line
@@ -275,10 +285,11 @@ class ScriptLinkFilter(QtCore.QObject):
                     subprocess.Popen(cmd_string)
 
                     # Restore the document to default
-                    self.restoreDocumentToDefault()
+                    # Necessary to pause events because otherwise any mouse move
+                    # events would re-highlight the link, and it would be left in that state.
+                    self.pauseEvents(10)
+                    self.restoreDefaults(cursor, line_format=self.link_format)
 
                     return True
 
         return super().eventFilter(obj, event)
-
-
