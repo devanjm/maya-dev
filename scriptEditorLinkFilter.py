@@ -1,22 +1,22 @@
 """
 This module creates clickable links from error messages in the maya script editor output window.
 
-The event filter assigns a toggle key.  If that key is held, errors with a file and line number
-will show up highlighted.  If the user clicks on one of these 'links' it will open the
+To use, call install().
+
+Any errors reported in the script editor will be highlighted and become clickable links.
+If the user clicks on one of these 'links' it will open the
 user specified IDE to that file and line number.
 
-To use, call install().
+Similarly you can call remove() to return the script editor to default.
 
 Make sure you replace IDE_EXE and IDE_CMD with the exe and command for your own IDE.
 
 To execute on maya startup, add the following to your userSetup.py.
-You need to assign the return of install() to variables.
 
 EXAMPLE:
     from maya import cmds
     import scriptEditorLinkFilter
-    cmd_string = "script_editor_wid, script_editor_link_event_filter = scriptEditorLinkFilter.install()"
-    cmds.evalDeferred(cmd_string, lowestPriority=True)
+    cmds.evalDeferred("scriptEditorLinkFilter.install()", lowestPriority=True)
 
 """
 import os
