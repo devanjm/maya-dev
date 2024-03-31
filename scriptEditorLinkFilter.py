@@ -29,7 +29,8 @@ from shiboken6 import wrapInstance
 
 from maya import OpenMayaUI as omui
 
-SCRIPT_EDITOR_WIDGET_NAME = 'cmdScrollFieldReporter1'
+
+SCRIPT_EDITOR_OUTPUT_WIDGET_NAME = 'cmdScrollFieldReporter1'
 TOGGLE_KEY = QtCore.Qt.Key.Key_Control
 LINK_COLOR = (54, 84, 255, 255)
 LINK_HOVER_COLOR = (120, 165, 255, 255)
@@ -49,7 +50,7 @@ global event_filter
 def getScriptEditorOutputWidget():
     ptr = omui.MQtUtil.mainWindow()
     widget = wrapInstance(int(ptr), QWidget)
-    ww = widget.findChild(QtWidgets.QPlainTextEdit, SCRIPT_EDITOR_WIDGET_NAME)
+    ww = widget.findChild(QtWidgets.QPlainTextEdit, SCRIPT_EDITOR_OUTPUT_WIDGET_NAME)
     return ww
 
 
@@ -57,12 +58,14 @@ def install():
     global event_filter
     script_editor_wid = getScriptEditorOutputWidget()
     event_filter = ScriptLinkFilter(parent=script_editor_wid)
+    event_filter.searchDocumentForLinks()
     return script_editor_wid, event_filter
 
 
 def remove():
     global event_filter
     event_filter.parent.document().contentsChange.disconnect(event_filter.highlightNewBlocks)
+    event_filter.restoreDocumentToDefault()
     event_filter.parent.removeEventFilter(event_filter)
     event_filter = None
 
@@ -222,6 +225,50 @@ class ScriptLinkFilter(QtCore.QObject):
         self.mouse_over_link = False
         self.highlighted_block = None
 
+    def searchDocumentForLinks(self):
+        """
+        Scan the document text and find clickable links.
+
+        Returns:
+
+        """
+        block = self.doc.firstBlock()
+        num_blocks = self.doc.blockCount()
+        cursor = self.parent.textCursor()
+        cursor_pos = cursor.position()
+        self.storeScrollBarPositions()
+
+        i = 0
+        while i < num_blocks:
+            match = self.matchTextForFileAndLine(block.text())
+            if match:
+                if os.path.exists(match['file_name']):
+                    cursor.setPosition(block.position())
+                    self.setLineFormat(cursor, line_format=self.link_format)
+                    self.link_blocks.append(block)
+            block = block.next()
+            i += 1
+
+        cursor.setPosition(cursor_pos)
+        self.restoreScrollBarPositions()
+
+    def restoreDocumentToDefault(self):
+        """
+        Restore the document to default state.
+
+        Returns:
+
+        """
+        cursor = self.parent.textCursor()
+        self.storeScrollBarPositions()
+
+        for block in self.link_blocks:
+            cursor.setPosition(block.position())
+            self.setLineFormat(cursor)
+
+        self.restoreScrollBarPositions()
+        QtGui.QGuiApplication.restoreOverrideCursor()
+
     def getTextUnderCursor(self):
         """
         Get the block text under the cursor.
@@ -254,7 +301,9 @@ class ScriptLinkFilter(QtCore.QObject):
         # Mouse move
         # Highlights hovered links
         if event.type() in [QtCore.QEvent.Type.MouseMove, QtCore.QEvent.Type.TabletMove]:
-            cursor = self.parent.cursorForPosition(self.parent.mapFromGlobal(QtGui.QCursor().pos()))
+            cursor_global_pos = QtGui.QCursor().pos()
+            cursor_pos_local = self.parent.mapFromGlobal(cursor_global_pos)
+            cursor = self.parent.cursorForPosition(cursor_pos_local)
 
             # If the mouse is over a link, highlight it
             if cursor.block() in self.link_blocks:
@@ -264,7 +313,17 @@ class ScriptLinkFilter(QtCore.QObject):
             # This is the case for if we already are highlighted and
             # move off a link, return it to default link formatting.
             if self.mouse_over_link:
-                if cursor.block() != self.highlighted_block:
+
+                # Case if the cursor was on a link, then moved outside the viewport
+                # and shrink the top by 1 because the script editor tool bar
+                # seems to not detect the cursor leaving if you move too fast.
+                rect = self.parent.viewport().geometry()
+                rect -= QtCore.QMargins(0, 1, 0, 0)
+
+                if not rect.contains(cursor_pos_local):
+                    self.restoreDefaults(cursor, line_format=self.link_format)
+
+                elif cursor.block() != self.highlighted_block:
                     self.restoreDefaults(cursor, line_format=self.link_format)
 
         # Mouse click
