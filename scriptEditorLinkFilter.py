@@ -43,7 +43,6 @@ IDE_EXE = r"C:\Program Files\JetBrains\PyCharm Community Edition 2023.1.2\bin\py
 # IDE command to execute - replace this with the formatting it specifies
 IDE_CMD = f'{IDE_EXE} --line {{line_num}} {{file_path}}'
 
-global text_edit
 global event_filter
 
 
