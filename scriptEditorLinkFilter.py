@@ -64,7 +64,7 @@ def install():
 
 def remove():
     global event_filter
-    event_filter.parent.document().contentsChange.disconnect(event_filter.highlightNewBlocks)
+    event_filter.doc.contentsChange.disconnect(event_filter.highlightNewBlocks)
     event_filter.restoreDocumentToDefault()
     event_filter.parent.removeEventFilter(event_filter)
     event_filter = None
@@ -300,10 +300,13 @@ class ScriptLinkFilter(QtCore.QObject):
 
         # Mouse move
         # Highlights hovered links
-        if event.type() in [QtCore.QEvent.Type.MouseMove, QtCore.QEvent.Type.TabletMove]:
+        if event.type() in [QtCore.QEvent.Type.MouseMove, QtCore.QEvent.Type.TabletMove] \
+                and event.buttons() == QtCore.Qt.MouseButton.NoButton:
+
             cursor_global_pos = QtGui.QCursor().pos()
             cursor_pos_local = self.parent.mapFromGlobal(cursor_global_pos)
             cursor = self.parent.cursorForPosition(cursor_pos_local)
+            rect = self.parent.viewport().geometry()
 
             # If the mouse is over a link, highlight it
             if cursor.block() in self.link_blocks:
@@ -314,17 +317,22 @@ class ScriptLinkFilter(QtCore.QObject):
             # move off a link, return it to default link formatting.
             if self.mouse_over_link:
 
-                # Case if the cursor was on a link, then moved outside the viewport
-                # and shrink the top by 1 because the script editor tool bar
-                # seems to not detect the cursor leaving if you move too fast.
-                rect = self.parent.viewport().geometry()
-                rect -= QtCore.QMargins(0, 1, 0, 0)
-
+                # If we move onto scroll bars, we don't want to highlight.
                 if not rect.contains(cursor_pos_local):
                     self.restoreDefaults(cursor, line_format=self.link_format)
 
                 elif cursor.block() != self.highlighted_block:
                     self.restoreDefaults(cursor, line_format=self.link_format)
+
+        # Extra security here, sometimes in the move events if you move
+        # too fast it won't register as outside the rect before it stops
+        # registering move events at all, so also use the leave event.
+        if event.type() == QtCore.QEvent.Type.Leave:
+            cursor_global_pos = QtGui.QCursor().pos()
+            cursor_pos_local = self.parent.mapFromGlobal(cursor_global_pos)
+            cursor = self.parent.cursorForPosition(cursor_pos_local)
+            if self.mouse_over_link:
+                self.restoreDefaults(cursor, line_format=self.link_format)
 
         # Mouse click
         # Launches editor to error file and line
